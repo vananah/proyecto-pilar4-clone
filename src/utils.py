@@ -16,19 +16,27 @@ def analizar_respuestas_p4(df_respuestas):
     """
     df = df_respuestas.copy()
 
-    # Asegurar que la columna ID sea texto limpio (corrección del error)
-    df["ID"] = df["ID"].astype(str).str.strip()
+    # Detectar si la columna clave está como 'Nombre de usuario' y renombrarla a 'ID'
+    posibles_columnas_id = ['ID', 'Nombre de usuario', 'Usuario', 'Correo electrónico']
+    columna_encontrada = None
+
+    for col in posibles_columnas_id:
+        if col in df.columns:
+            columna_encontrada = col
+            break
+
+    if not columna_encontrada:
+        return {"error": "No se encontró una columna identificadora como 'ID' o 'Nombre de usuario'"}
+
+    df.rename(columns={columna_encontrada: "ID"}, inplace=True)
 
     # Asociar preguntas al ID
-    preguntas_dict = dict(zip(PREGUNTAS_P4["ID"].astype(str).str.strip(), PREGUNTAS_P4["Pregunta"]))
+    preguntas_dict = dict(zip(PREGUNTAS_P4["ID"], PREGUNTAS_P4["Pregunta"]))
     df["Pregunta"] = df["ID"].map(preguntas_dict)
 
     # Unir con los parámetros del Pilar 4 (evaluación)
-    parametros = PARAMETROS_P4.copy()
-    parametros["ID"] = parametros["ID"].astype(str).str.strip()
-    df = df.merge(parametros, how="left", on="ID")
+    df = df.merge(PARAMETROS_P4, how="left", on="ID")
 
-    # En el futuro se puede aplicar lógica adicional (evaluación automática)
     return df
 
 def analizar_respuestas_p5(df_respuestas, df_p4_previamente_procesado):
@@ -38,12 +46,21 @@ def analizar_respuestas_p5(df_respuestas, df_p4_previamente_procesado):
     """
     df = df_respuestas.copy()
 
-    # Asegurar que la columna ID sea texto limpio (por coherencia con los parámetros)
-    df["ID"] = df["ID"].astype(str).str.strip()
+    # Detectar si la columna clave está como 'Nombre de usuario' y renombrarla a 'ID'
+    posibles_columnas_id = ['ID', 'Nombre de usuario', 'Usuario', 'Correo electrónico']
+    columna_encontrada = None
 
-    parametros = PARAMETROS_P5.copy()
-    parametros["ID"] = parametros["ID"].astype(str).str.strip()
-    df = df.merge(parametros, how="left", on="ID")
+    for col in posibles_columnas_id:
+        if col in df.columns:
+            columna_encontrada = col
+            break
 
-    # Lógica futura: cruces con el DataFrame del Pilar 4 si se necesita verificar planificación vs. ejecución
+    if not columna_encontrada:
+        return {"error": "No se encontró una columna identificadora como 'ID' o 'Nombre de usuario'"}
+
+    df.rename(columns={columna_encontrada: "ID"}, inplace=True)
+
+    # Unir con los parámetros del Pilar 5
+    df = df.merge(PARAMETROS_P5, how="left", on="ID")
+
     return df
