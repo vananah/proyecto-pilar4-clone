@@ -1,14 +1,14 @@
 {
   "openapi": "3.0.1",
   "info": {
-    "title": "Clasificador Pilar 4",
+    "title": "Evaluador MEiRA",
     "version": "1.0",
-    "description": "API que clasifica respuestas de estudiantes del Pilar 4 en Pre-aprobado, Revisión o Descartado."
+    "description": "API que analiza automáticamente respuestas de formularios MEiRA para los Pilares 4 y 5."
   },
   "paths": {
-    "/classify": {
+    "/procesar_pilar4/": {
       "post": {
-        "summary": "Clasifica respuestas del Pilar 4",
+        "summary": "Procesar respuestas del Pilar 4",
         "requestBody": {
           "required": true,
           "content": {
@@ -24,11 +24,48 @@
                 "required": ["file"]
               }
             }
-          }
+          },
+          "description": "Subí un archivo CSV con las respuestas del Pilar 4"
         },
         "responses": {
           "200": {
-            "description": "Archivo Excel clasificado",
+            "description": "Archivo Excel analizado con evaluación automatizada",
+            "content": {
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/procesar_pilar5/": {
+      "post": {
+        "summary": "Procesar respuestas del Pilar 5",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  }
+                },
+                "required": ["file"]
+              }
+            }
+          },
+          "description": "Subí un archivo CSV con las respuestas del Pilar 5"
+        },
+        "responses": {
+          "200": {
+            "description": "Archivo Excel analizado con evaluación automatizada",
             "content": {
               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
                 "schema": {
