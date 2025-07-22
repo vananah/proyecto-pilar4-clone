@@ -1,0 +1,15 @@
+{
+  "schema_version": "v1",
+  "name_for_human": "Clasificador Pilar 4",
+  "name_for_model": "pilar4_classifier",
+  "description_for_human": "Clasifica respuestas del Pilar 4 en Pre-aprobado, Revisión humana o Descartado",
+  "description_for_model": "Plugin que recibe un Excel/CSV con respuestas al Pilar 4 y devuelve un Excel clasificado.",
+  "auth": { "type": "none" },
+  "api": {
+    "type": "openapi",
+    "url": "https://proyecto-pilar4.onrender.com/openapi.json"
+  },
+  "logo_url": "https://proyecto-pilar4.onrender.com/logo.png",
+  "contact_email": "vanesa.pallares@gmail.com",
+  "legal_info_url": "https://proyecto-pilar4.onrender.com/terms"
+}
