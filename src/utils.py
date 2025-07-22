@@ -11,21 +11,36 @@ PARAMETROS_P5 = pd.read_excel(os.path.join(BASE_PATH, "parametros_pilar5.xlsx"))
 
 def analizar_respuestas_p4(df_respuestas):
     """
-    Agrega las preguntas correspondientes y evalúa cada respuesta según los parámetros del Pilar 4.
-    Retorna un DataFrame con columnas agregadas de texto de pregunta y evaluación.
+    Evalúa las respuestas del Pilar 4 incluso si no tiene columna 'ID'.
+    Detecta columnas 'Respuesta 1', 'Respuesta 2', etc., y las cruza con preguntas y parámetros.
     """
     df = df_respuestas.copy()
 
-    # Asociar preguntas al ID
+    # Detectar columnas tipo 'Respuesta X'
+    columnas_respuesta = [col for col in df.columns if "Respuesta" in col]
+
+    if not columnas_respuesta:
+        raise ValueError("No se encontraron columnas con 'Respuesta 1', 'Respuesta 2', etc.")
+
+    # Pasar a formato largo
+    df_largo = df.melt(
+        id_vars=[col for col in df.columns if col not in columnas_respuesta],
+        value_vars=columnas_respuesta,
+        var_name="ID",
+        value_name="Texto"
+    )
+
+    # Asegurar que ID coincida con los del Excel base
+    df_largo["ID"] = df_largo["ID"].str.strip()
+
+    # Agregar pregunta desde archivo base
     preguntas_dict = dict(zip(PREGUNTAS_P4["ID"], PREGUNTAS_P4["Pregunta"]))
-    df["Pregunta"] = df["ID"].map(preguntas_dict)
+    df_largo["Pregunta"] = df_largo["ID"].map(preguntas_dict)
 
-    # Unir con los parámetros del Pilar 4 (evaluación)
-    df = df.merge(PARAMETROS_P4, how="left", on="ID")
+    # Unir con parámetros del Pilar 4
+    df_largo = df_largo.merge(PARAMETROS_P4, how="left", on="ID")
 
-    # En el futuro se puede aplicar lógica adicional (evaluación automática)
-
-    return df
+    return df_largo
 
 def analizar_respuestas_p5(df_respuestas, df_p4_previamente_procesado):
     """
@@ -33,11 +48,5 @@ def analizar_respuestas_p5(df_respuestas, df_p4_previamente_procesado):
     Por ahora, solo agrega evaluación base desde los parámetros.
     """
     df = df_respuestas.copy()
-
-    # Unir con los parámetros del Pilar 5
     df = df.merge(PARAMETROS_P5, how="left", on="ID")
-
-    # Lógica futura: cruces con el DataFrame del Pilar 4 si se necesita verificar planificación vs. ejecución
-
     return df
-
