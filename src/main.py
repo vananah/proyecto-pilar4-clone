@@ -1,33 +1,46 @@
 from fastapi import FastAPI, File, UploadFile
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
-from src.utils import procesar_excel
-import shutil
-import os
+from fastapi.responses import StreamingResponse
+import pandas as pd
+import io
+
+from utils import analizar_respuestas_p4, analizar_respuestas_p5
 
 app = FastAPI()
 
-# Monta los archivos estáticos si usás HTML en /static
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
 @app.get("/")
-def home():
-    return {"mensaje": "Agente IA Pilar 4 activo y funcionando correctamente"}
+def read_root():
+    return {"mensaje": "API MEiRA lista. Subí tus respuestas para analizarlas."}
 
-@app.post("/analizar")
-async def analizar(file: UploadFile = File(...)):
-    archivo_entrada = "entrada.xlsx"
-    archivo_salida = "salida.xlsx"
+@app.post("/procesar_pilar4/")
+async def procesar_pilar4(file: UploadFile = File(...)):
+    contenido = await file.read()
+    df_respuestas = pd.read_csv(io.BytesIO(contenido))
 
-    # Guardar archivo subido temporalmente
-    with open(archivo_entrada, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+    df_analizado = analizar_respuestas_p4(df_respuestas)
 
-    # Procesar el Excel
-    try:
-        procesar_excel(archivo_entrada, archivo_salida)
-    except Exception as e:
-        return {"error": str(e)}
+    # Convertir a Excel
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_analizado.to_excel(writer, index=False, sheet_name="Pilar 4 Evaluado")
+    output.seek(0)
 
-    # Devolver el archivo procesado
-    return FileResponse(archivo_salida, filename="resultado_pilar4.xlsx")
+    return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": "attachment; filename=resultados_pilar4.xlsx"})
+
+@app.post("/procesar_pilar5/")
+async def procesar_pilar5(file: UploadFile = File(...)):
+    contenido = await file.read()
+    df_respuestas = pd.read_csv(io.BytesIO(contenido))
+
+    # ⚠️ Si más adelante necesitás cruzar con resultados de P4:
+    df_p4_vacio = pd.DataFrame()  # Por ahora está vacío, lo conectamos luego
+    df_analizado = analizar_respuestas_p5(df_respuestas, df_p4_vacio)
+
+    # Convertir a Excel
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_analizado.to_excel(writer, index=False, sheet_name="Pilar 5 Evaluado")
+    output.seek(0)
+
+    return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": "attachment; filename=resultados_pilar5.xlsx"})
