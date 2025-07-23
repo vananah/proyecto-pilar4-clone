@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 import pandas as pd
 import io
 
-from src.utils import analizar_respuestas_p4, analizar_respuestas_p5  # CORREGIDO
+from utils import analizar_respuestas_p4
 
 app = FastAPI()
 
@@ -27,7 +27,6 @@ def transformar_formato_ancho_a_largo(df):
     registros = []
     for idx, fila in df.iterrows():
         identificador = fila.get(columna_id, f"Estudiante_{idx+1}")
-
         for i, col in enumerate(columnas_respuestas, start=1):
             registros.append({
                 "Estudiante": identificador,
@@ -61,23 +60,6 @@ async def procesar_pilar4(file: UploadFile = File(...)):
         output.seek(0)
 
         return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                 headers={"Content-Disposition": "attachment; filename=resultados_pilar4.xlsx"})
-    except Exception as e:
-        return {"error": str(e)}
-
-@app.post("/procesar_pilar5/")
-async def procesar_pilar5(file: UploadFile = File(...)):
-    try:
-        df = leer_archivo(file)
-        df_p4_vacio = pd.DataFrame()
-        df_analizado = analizar_respuestas_p5(df, df_p4_vacio)
-
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_analizado.to_excel(writer, index=False, sheet_name="Pilar 5 Evaluado")
-        output.seek(0)
-
-        return StreamingResponse(output, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                 headers={"Content-Disposition": "attachment; filename=resultados_pilar5.xlsx"})
+                                 headers={"Content-Disposition": "attachment; filename=Informe_Pilar4_Explicado.xlsx"})
     except Exception as e:
         return {"error": str(e)}
