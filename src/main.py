@@ -1,154 +1,222 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import io
+import logging
+from typing import Optional
 
-from .utils import analizar_respuestas_p4, analizar_respuestas_p5
+from .utils import analizar_respuestas_p4, analizar_respuestas_p5, cruzar_pilares_4_y_5
+from .validators import validar_archivo_csv, detectar_formato_archivo
+from .config import API_CONFIG
 
-app = FastAPI()
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(
+    title="Evaluador MEiRA",
+    description="API que analiza automáticamente respuestas de formularios MEiRA para los Pilares 4 y 5",
+    version="1.1.0"
+)
+
+# Configurar CORS para permitir acceso desde diferentes dominios
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/")
 def read_root():
-    return {"mensaje": "API MEiRA lista. Subí tus respuestas para analizarlas en formato CSV o XLSX."}
+    return {
+        "mensaje": "API MEiRA Evaluador Automático",
+        "version": "1.1.0",
+        "descripcion": "Procesa respuestas de formularios MEiRA para Pilares 4 y 5",
+        "endpoints": {
+            "/procesar_pilar4/": "Analiza respuestas del Pilar 4 (planificación SMART)",
+            "/procesar_pilar5/": "Analiza respuestas del Pilar 5 (evidencias)",
+            "/cruzar_pilares/": "Cruza análisis de Pilar 4 y 5",
+            "/health": "Estado de la API"
+        }
+    }
 
-def transformar_formato_ancho_a_largo(df):
-    """Convierte un archivo ancho (una fila por estudiante) al formato largo (una fila por respuesta)."""
-    print(f"DataFrame original - Forma: {df.shape}, Columnas: {list(df.columns)}")
-    
-    columnas_respuestas = [col for col in df.columns if col.lower().startswith("respuesta")]
-    print(f"Columnas de respuestas encontradas: {columnas_respuestas}")
+@app.get("/health")
+def health_check():
+    """Endpoint para verificar el estado de la API"""
+    return {"status": "healthy", "message": "API funcionando correctamente"}
 
-    # Buscar columna de identificación
-    posibles_ids = ["ID", "id", "Id", "Identificador", "identificador", "Estudiante", "Nombre de usuario", "Correo electrónico"]
-    columna_id = next((col for col in posibles_ids if col in df.columns), None)
-    print(f"Columna ID encontrada: {columna_id}")
-
-    if not columnas_respuestas:
-        # Si no hay columnas "Respuesta", asumir que ya está en formato largo
-        print("No se encontraron columnas 'Respuesta'. Asumiendo formato largo.")
-        return df
-
-    registros = []
-    for idx, fila in df.iterrows():
-        identificador = fila.get(columna_id, f"Estudiante_{idx+1}")
-        correo = fila.get("Correo electrónico", "")
-
-        for i, col in enumerate(columnas_respuestas, start=1):
-            registros.append({
-                "Estudiante": identificador,
-                "Correo": correo,
-                "ID": i,
-                "Respuesta": fila[col] if col in fila else None
-            })
-
-    df_largo = pd.DataFrame(registros)
-    print(f"DataFrame transformado - Forma: {df_largo.shape}, Columnas: {list(df_largo.columns)}")
-    return df_largo
-
-def leer_archivo(file: UploadFile):
-    """Detecta automáticamente si es CSV o XLSX y lo convierte a DataFrame."""
-    contenido = file.file.read()
-    nombre = file.filename.lower()
-
+def procesar_archivo(file: UploadFile) -> pd.DataFrame:
+    """Procesa y valida un archivo subido"""
     try:
-        if nombre.endswith(".csv"):
-            # Intentar diferentes encodings
-            try:
-                df = pd.read_csv(io.BytesIO(contenido), encoding='utf-8')
-            except UnicodeDecodeError:
-                try:
-                    df = pd.read_csv(io.BytesIO(contenido), encoding='latin-1')
-                except UnicodeDecodeError:
-                    df = pd.read_csv(io.BytesIO(contenido), encoding='cp1252')
-        elif nombre.endswith(".xlsx"):
-            df = pd.read_excel(io.BytesIO(contenido))
-        else:
-            raise ValueError("Formato no compatible. Subí un archivo .csv o .xlsx")
+        # Validar archivo
+        validar_archivo_csv(file)
         
-        print(f"Archivo leído exitosamente: {df.shape[0]} filas, {df.shape[1]} columnas")
+        # Leer archivo
+        contenido = file.file.read()
+        df = detectar_formato_archivo(contenido, file.filename)
+        
+        logger.info(f"Archivo procesado: {df.shape[0]} filas, {df.shape[1]} columnas")
         return df
         
     except Exception as e:
-        raise ValueError(f"Error al leer el archivo: {str(e)}")
+        logger.error(f"Error procesando archivo {file.filename}: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Error procesando archivo: {str(e)}")
+
+def generar_excel_respuesta(df: pd.DataFrame, nombre_hoja: str, nombre_archivo: str) -> StreamingResponse:
+    """Genera respuesta Excel con formato mejorado"""
+    try:
+        output = io.BytesIO()
+        
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name=nombre_hoja)
+            
+            # Obtener worksheet para formatear
+            workbook = writer.book
+            worksheet = writer.sheets[nombre_hoja]
+            
+            # Autoajustar ancho de columnas
+            for column in worksheet.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                
+                adjusted_width = min(max_length + 2, 50)
+                worksheet.column_dimensions[column_letter].width = adjusted_width
+            
+            # Congelar primera fila
+            worksheet.freeze_panes = "A2"
+        
+        output.seek(0)
+        
+        return StreamingResponse(
+            output,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={nombre_archivo}"}
+        )
+        
+    except Exception as e:
+        logger.error(f"Error generando Excel: {str(e)}")
+        raise HTTPException(status_code=500, detail="Error generando archivo Excel")
 
 @app.post("/procesar_pilar4/")
 async def procesar_pilar4(file: UploadFile = File(...)):
+    """
+    Procesa respuestas del Pilar 4 (planificación según criterios SMART y MEiRA)
+    """
     try:
-        # Validar el archivo
-        if not file.filename:
-            raise HTTPException(status_code=400, detail="No se proporcionó un archivo")
+        logger.info(f"Procesando Pilar 4: {file.filename}")
         
-        df_ancho = leer_archivo(file)
-        if df_ancho.empty:
-            raise HTTPException(status_code=400, detail="El archivo está vacío o mal formateado")
-
-        # Transformar formato si es necesario
-        df_largo = transformar_formato_ancho_a_largo(df_ancho)
+        # Procesar archivo
+        df = procesar_archivo(file)
         
         # Analizar respuestas
-        df_analizado = analizar_respuestas_p4(df_largo)
-
-        # Verificar si hubo error en el análisis
+        df_analizado = analizar_respuestas_p4(df)
+        
         if isinstance(df_analizado, dict) and "error" in df_analizado:
             raise HTTPException(status_code=400, detail=df_analizado["error"])
-
+        
         if df_analizado.empty:
-            raise HTTPException(status_code=400, detail="El análisis no devolvió resultados. Verificá el archivo subido")
-
-        # Generar archivo Excel
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_analizado.to_excel(writer, index=False, sheet_name="Pilar 4 Evaluado")
-        output.seek(0)
-
-        return StreamingResponse(
-            output,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": "attachment; filename=resultados_pilar4.xlsx"}
+            raise HTTPException(status_code=400, detail="No se generaron resultados del análisis")
+        
+        logger.info(f"Pilar 4 procesado exitosamente: {df_analizado.shape[0]} registros")
+        
+        return generar_excel_respuesta(
+            df_analizado, 
+            "Pilar 4 - Planificación", 
+            "evaluacion_pilar4_planificacion.xlsx"
         )
-
+        
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error inesperado en procesar_pilar4: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error interno del servidor: {str(e)}")
+        logger.error(f"Error inesperado en Pilar 4: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
 
 @app.post("/procesar_pilar5/")
 async def procesar_pilar5(file: UploadFile = File(...)):
+    """
+    Procesa respuestas del Pilar 5 (evaluación de evidencias)
+    """
     try:
-        # Validar el archivo
-        if not file.filename:
-            raise HTTPException(status_code=400, detail="No se proporcionó un archivo")
-            
-        df = leer_archivo(file)
-        if df.empty:
-            raise HTTPException(status_code=400, detail="El archivo está vacío o mal formateado")
-
-        # Analizar respuestas (DataFrame vacío para P4 ya que no se está cruzando)
-        df_p4_vacio = pd.DataFrame()
-        df_analizado = analizar_respuestas_p5(df, df_p4_vacio)
-
-        # Verificar si hubo error en el análisis
+        logger.info(f"Procesando Pilar 5: {file.filename}")
+        
+        # Procesar archivo
+        df = procesar_archivo(file)
+        
+        # Analizar respuestas
+        df_analizado = analizar_respuestas_p5(df)
+        
         if isinstance(df_analizado, dict) and "error" in df_analizado:
             raise HTTPException(status_code=400, detail=df_analizado["error"])
-
+        
         if df_analizado.empty:
-            raise HTTPException(status_code=400, detail="El análisis no devolvió resultados. Verificá el archivo subido")
-
-        # Generar archivo Excel
-        output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df_analizado.to_excel(writer, index=False, sheet_name="Pilar 5 Evaluado")
-        output.seek(0)
-
-        return StreamingResponse(
-            output,
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": "attachment; filename=resultados_pilar5.xlsx"}
+            raise HTTPException(status_code=400, detail="No se generaron resultados del análisis")
+        
+        logger.info(f"Pilar 5 procesado exitosamente: {df_analizado.shape[0]} registros")
+        
+        return generar_excel_respuesta(
+            df_analizado, 
+            "Pilar 5 - Evidencias", 
+            "evaluacion_pilar5_evidencias.xlsx"
         )
-
+        
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error inesperado en procesar_pilar5: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error interno del servidor: {str(e)}")
+        logger.error(f"Error inesperado en Pilar 5: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
+
+@app.post("/cruzar_pilares/")
+async def cruzar_pilares(
+    archivo_p4: UploadFile = File(..., description="Archivo CSV con respuestas del Pilar 4"),
+    archivo_p5: UploadFile = File(..., description="Archivo CSV con respuestas del Pilar 5")
+):
+    """
+    Cruza los análisis de Pilar 4 y Pilar 5 para evaluación integral
+    """
+    try:
+        logger.info(f"Cruzando pilares: P4={archivo_p4.filename}, P5={archivo_p5.filename}")
+        
+        # Procesar ambos archivos
+        df_p4 = procesar_archivo(archivo_p4)
+        df_p5 = procesar_archivo(archivo_p5)
+        
+        # Analizar cada pilar
+        df_p4_analizado = analizar_respuestas_p4(df_p4)
+        df_p5_analizado = analizar_respuestas_p5(df_p5)
+        
+        # Verificar errores
+        if isinstance(df_p4_analizado, dict) and "error" in df_p4_analizado:
+            raise HTTPException(status_code=400, detail=f"Error en Pilar 4: {df_p4_analizado['error']}")
+        
+        if isinstance(df_p5_analizado, dict) and "error" in df_p5_analizado:
+            raise HTTPException(status_code=400, detail=f"Error en Pilar 5: {df_p5_analizado['error']}")
+        
+        # Cruzar pilares
+        df_cruzado = cruzar_pilares_4_y_5(df_p4_analizado, df_p5_analizado)
+        
+        if isinstance(df_cruzado, dict) and "error" in df_cruzado:
+            raise HTTPException(status_code=400, detail=df_cruzado["error"])
+        
+        logger.info(f"Pilares cruzados exitosamente: {df_cruzado.shape[0]} registros")
+        
+        return generar_excel_respuesta(
+            df_cruzado, 
+            "Evaluación Integral P4-P5", 
+            "evaluacion_integral_pilares_4_y_5.xlsx"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error inesperado cruzando pilares: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error interno: {str(e)}")
