@@ -6,7 +6,8 @@ def analizar_respuestas_p4(df_largo: pd.DataFrame) -> pd.DataFrame:
             return "Sin respuesta"
         respuesta = str(respuesta).lower()
         indicadores = [
-            "necesidad de incorporar", "ventajas", "riesgos", "uso responsable", "profundizar", "aprendizaje"
+            "necesidad", "incorporar", "inteligencia artificial", "riesgos", "uso responsable",
+            "profundizar", "aprendizaje", "ventajas", "limitaciones", "contexto", "función pública"
         ]
         return "Cumple" if any(palabra in respuesta for palabra in indicadores) else "No cumple"
 
@@ -19,7 +20,8 @@ def analizar_respuestas_p5(df_largo: pd.DataFrame, df_p4: pd.DataFrame) -> pd.Da
             return "Sin respuesta"
         respuesta = str(respuesta).lower()
         indicadores = [
-            "análisis de ventajas", "riesgos", "aplicación", "actividad", "divulgación", "guía", "medir resultados"
+            "análisis", "ventajas", "riesgos", "aplicación", "actividad", "proyecto",
+            "divulgación", "talleres", "guía", "medir resultados", "evaluar", "impacto"
         ]
         return "Cumple" if any(palabra in respuesta for palabra in indicadores) else "No cumple"
 
