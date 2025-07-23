@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 import pandas as pd
 import io
 
-from utils import analizar_respuestas_p4
+from src.utils import analizar_respuestas_p4
 
 app = FastAPI()
 
