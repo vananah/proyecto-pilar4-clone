@@ -3,7 +3,7 @@ from fastapi.responses import StreamingResponse
 import pandas as pd
 import io
 
-from utils import analizar_respuestas_p4, analizar_respuestas_p5
+from src.utils import analizar_respuestas_p4, analizar_respuestas_p5  # CORREGIDO
 
 app = FastAPI()
 
@@ -12,7 +12,6 @@ def read_root():
     return {"mensaje": "API MEiRA lista. Subí tus respuestas para analizarlas en formato CSV o XLSX."}
 
 def transformar_formato_ancho_a_largo(df):
-    """Convierte un archivo ancho (una fila por estudiante) al formato largo (una fila por respuesta)."""
     columnas_respuestas = [col for col in df.columns if col.lower().startswith("respuesta")]
 
     posibles_ids = [
@@ -39,7 +38,6 @@ def transformar_formato_ancho_a_largo(df):
     return pd.DataFrame(registros)
 
 def leer_archivo(file: UploadFile):
-    """Detecta automáticamente si es CSV o XLSX y lo convierte a DataFrame."""
     contenido = file.file.read()
     nombre = file.filename.lower()
 
